@@ -1,9 +1,13 @@
-from collections.abc import Iterator
+from __future__ import annotations
+
 from gzip import GzipFile
 from pathlib import Path
-from typing import IO, BinaryIO
+from typing import IO, TYPE_CHECKING, BinaryIO
 
 import pytest
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 
 def absolute_path(filename: str) -> Path:

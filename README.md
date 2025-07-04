@@ -1,6 +1,6 @@
 # dissect.cramfs
 
-A Dissect module implementing a parser for the Cram file system, commonly used in appliance or device firmware. For more
+A Dissect module implementing a parser for the compressed ROM/RAM file system (or cramfs), commonly used in appliance or device firmware. For more
 information, please see [the documentation](https://docs.dissect.tools/en/latest/projects/dissect.cramfs/index.html).
 
 ## Requirements

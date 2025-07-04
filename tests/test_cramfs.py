@@ -1,7 +1,11 @@
+from __future__ import annotations
+
+from typing import BinaryIO
+
 from dissect.cramfs.cramfs import CramFS, c_cramfs
 
 
-def test_cramfs(cramfs: CramFS) -> None:
+def test_cramfs(cramfs: BinaryIO) -> None:
     cramfs = CramFS(cramfs)
     assert cramfs.sb.magic == c_cramfs.CRAMFS_MAGIC
     assert cramfs.sb.size == 69632
@@ -21,7 +25,7 @@ def test_cramfs(cramfs: CramFS) -> None:
     assert file2.open().read() == b"test\n"
 
 
-def test_webcramfs(webcramfs: CramFS) -> None:
+def test_webcramfs(webcramfs: BinaryIO) -> None:
     cramfs = CramFS(webcramfs)
     assert cramfs.sb.magic == c_cramfs.CRAMFS_MAGIC
     assert cramfs.sb.size == 3088384
@@ -54,18 +58,16 @@ def test_webcramfs(webcramfs: CramFS) -> None:
     assert file.size == 330256
     assert len(file.open().read()) == file.size
 
-    symlink = cramfs.get("/bin/cat")
+    symlink = cramfs.get("/bin/macGuarder")
     assert symlink.is_symlink()
-    assert symlink.link == cramfs.get("/bin/busybox").name
-    assert symlink.link_inode.name == cramfs.get("/bin/busybox").name
-    assert symlink.link_inode.size == cramfs.get("/bin/busybox").size
+    assert symlink.link == "./dvrbox"
 
 
-def test_holecramfs(holecramfs: CramFS) -> None:
+def test_holecramfs(holecramfs: BinaryIO) -> None:
     cramfs = CramFS(holecramfs)
     assert cramfs.sb.magic == c_cramfs.CRAMFS_MAGIC
     assert cramfs.sb.size == 4096
-    assert cramfs.sb.flags == 259
+    assert cramfs.sb.flags == 0x103
     assert cramfs.sb.signature == b"Compressed ROMFS"
     assert sorted(cramfs.root.listdir().keys()) == [
         "dev",

@@ -6,7 +6,7 @@ from bisect import bisect_right
 from functools import cache, cached_property
 from typing import TYPE_CHECKING, BinaryIO
 
-from dissect.util.stream import RunlistStream
+from dissect.util.stream import AlignedStream, RangeStream
 
 from dissect.cramfs.c_cramfs import (
     BLOCK_SIZE,
@@ -32,14 +32,15 @@ class CramFS:
         fh: A file-like object of the volume containing the filesystem.
     """
 
-    def __init__(self, fh: BinaryIO) -> None:
+    def __init__(self, fh: BinaryIO):
+        fh.seek(0)
         self.fh = fh
         self.sb = c_cramfs.cramfs_super_block(fh)
 
         if self.sb.magic != c_cramfs.CRAMFS_MAGIC:
             raise ValueError("Invalid CramFS filesystem")
 
-        self.root = INode(self, (self.sb.root.offset << 2) - 12, name=b"/")
+        self.root = INode(self, (self.sb.root.offset << 2) - 12)
 
     def get(self, path: str, node: INode | None = None) -> INode:
         """Return an inode object for the given path or inode number.
@@ -51,47 +52,14 @@ class CramFS:
         node = node or self.root
         parts = path.split("/")
 
-        for part_num, part in enumerate(parts):
-            if not part:
-                continue
-
-            while node.is_symlink() and part_num < len(parts):
-                node = node.link_inode
-
+        for part in filter(None, parts):
             for entry in node.iterdir():
                 if entry.name == part:
                     node = entry
                     break
             else:
                 raise FileNotFoundError(f"File not found: {path}")
-
         return node
-
-    def _read_block(self, offset: int, size: int) -> bytes:
-        """Read a block of data from the filesystem.
-
-        Args:
-            offset (int): The offset of the block.
-            size (int): The size of the block to read.
-        """
-        uncompressed = offset & UNCOMPRESSED_BLOCK_FLAG
-        direct = offset & DIRECT_POINTER_FLAG
-
-        if direct:
-            raise NotImplementedError("Direct pointers are not supported yet.")
-
-        offset = offset & ~(UNCOMPRESSED_BLOCK_FLAG | DIRECT_POINTER_FLAG)
-
-        self.fh.seek(offset)
-        data = self.fh.read(size)
-        if not data:
-            # sparse block aka hole
-            return b"\x00" * BLOCK_SIZE
-
-        if uncompressed:
-            return data
-
-        return zlib.decompress(data)
 
 
 class INode:
@@ -99,21 +67,24 @@ class INode:
         self,
         fs: CramFS,
         offset: int,
-        parent: INode | None = None,
         name: bytes | None = None,
     ):
         self.fs = fs
+        self.fh = self.fs.fh
         self._name = name
         self._offset = offset
-        self.parent = parent
 
-        self.fs.fh.seek(offset)
-        self.header = c_cramfs.cramfs_inode(self.fs.fh)
-
+        self.header = self.inode
         self.listdir = cache(self.listdir)
 
     def __repr__(self) -> str:
         return f"<INode {self.name!r} ({self.offset})>"
+
+    @cached_property
+    def inode(self) -> c_cramfs.cramfs_inode:
+        """Return the inode header."""
+        self.fh.seek(self._offset)
+        return c_cramfs.cramfs_inode(self.fh)
 
     @property
     def mode(self) -> int:
@@ -129,16 +100,14 @@ class INode:
     def major(self) -> int:
         """Return the major device ID for block and character devices."""
         if not self.is_device():
-            raise NotAFileError(f"{self!r} is not a device file")
-
+            raise NotAFileError(f"{self!r} is not character- or block device")
         return (self.header.size >> 8) & 0xFF
 
     @property
     def minor(self) -> int:
         """Return the minor device ID for block and character devices."""
         if not self.is_device():
-            raise NotAFileError(f"{self!r} is not a device file")
-
+            raise NotAFileError(f"{self!r} is not character- or block device")
         return self.header.size & 0xFF
 
     @property
@@ -161,10 +130,10 @@ class INode:
 
     @property
     def offset(self) -> int:
-        """Offset to the start of the data block or `INode`.
+        """Offset to the start of the data block or ``INode``.
 
         * For files: this is the offset to the first data block.
-        * For directories: this is the offset to the first `INode`.
+        * For directories: this is the offset to the first ``INode``.
         * For symlinks: this is the offset the data block holding the target name.
         """
         return self.header.offset << 2
@@ -181,18 +150,7 @@ class INode:
         """Return the symlink target."""
         if not self.is_symlink():
             raise NotASymlinkError(f"{self!r} is not a symlink")
-
-        return FileStream(self).read().decode().strip("\x00")
-
-    @cached_property
-    def link_inode(self) -> INode:
-        """Return the `INode` entry of the symlink target."""
-        if not self.is_symlink():
-            raise NotASymlinkError(f"{self!r} is not a symlink")
-
-        link = self.link
-        relnode = None if link.startswith("/") else self.parent
-        return self.fs.get(link, relnode)
+        return self.open().read().decode().strip("\x00")
 
     @cached_property
     def numblocks(self) -> int:
@@ -200,7 +158,7 @@ class INode:
         return ((self.size + BLOCK_SIZE) - 1) // BLOCK_SIZE
 
     @cached_property
-    def blocks(self) -> list[int, int]:
+    def dataruns(self) -> list[tuple[int, int]]:
         """Return the start and end offset of each data block."""
         self.fs.fh.seek(self.offset)
 
@@ -210,7 +168,6 @@ class INode:
             end = c_cramfs.uint32(self.fs.fh)
             blocks.append((start, end))
             start = end
-
         return blocks
 
     def is_dir(self) -> bool:
@@ -249,57 +206,83 @@ class INode:
         """Return whether this inode is an IPC object (FIFO or socket)."""
         return self.is_fifo() or self.is_socket()
 
-    def open(self) -> FileStream:
-        """Return a file-like object for reading the file."""
-        if not self.is_file():
-            raise NotAFileError(f"{self!r} is not a file")
-
-        return FileStream(self)
-
     def listdir(self) -> dict[str, INode]:
         """Return a directory listing."""
         return {inode.name: inode for inode in self.iterdir()}
+
+    dirlist = listdir
 
     def iterdir(self) -> Iterator[INode]:
         """Iterate directory contents."""
         if not self.is_dir():
             raise NotADirectoryError(f"{self!r} is not a directory")
 
-        self.fs.fh.seek(self.offset)
-
+        self.fh.seek(self.offset)
         end = self.offset + self.size
-        while (offset := self.fs.fh.tell()) != end:
-            yield INode(self.fs, offset, parent=self)
+        while (offset := self.fh.tell()) != end:
+            yield INode(self.fs, offset)
+
+    def open(self) -> FileStream | RangeStream:
+        """Return a file-like object for reading."""
+        if self.is_dir():
+            return RangeStream(self.fs.fh, self.offset, self.size)
+        return FileStream(self)
 
 
-class FileStream(RunlistStream):
+class FileStream(AlignedStream):
     def __init__(self, inode: INode):
-        super().__init__(inode.fs.fh, inode.blocks, inode.size, BLOCK_SIZE)
+        super().__init__(inode.size, BLOCK_SIZE)
+        self._fh = inode.fs.fh
+        self.offset = inode.offset
 
-        self.fs = inode.fs
         self.inode = inode
-        self.blocks = inode.blocks
+        self.dataruns = self.inode.dataruns
 
     def _read(self, offset: int, length: int) -> bytes:
         result = []
 
         offset = offset // BLOCK_SIZE
-
-        run_idx = bisect_right(self._runlist_offsets, offset)
-        runlist_len = len(self.runlist)
+        run_idx = bisect_right(list(range(1, self.inode.numblocks)), offset)
+        run_len = len(self.inode.dataruns)
 
         while length > 0:
-            if run_idx >= runlist_len:
+            if run_idx >= run_len:
                 break
 
-            start, end = self.blocks[run_idx]
+            start, end = self.dataruns[run_idx]
             read_len = end - start
 
-            data = self.fs._read_block(start, read_len)
+            data = self._read_block(start, read_len)
             result.append(data)
 
             offset += read_len
-            length -= len(data)
+            length -= BLOCK_SIZE
             run_idx += 1
 
         return b"".join(result)
+
+    def _read_block(self, offset: int, size: int) -> bytes:
+        """Read a block of data from the filesystem.
+
+        Args:
+            offset: The offset of the block.
+            size: The size of the block to read.
+        """
+        uncompressed = offset & UNCOMPRESSED_BLOCK_FLAG
+        direct = offset & DIRECT_POINTER_FLAG
+
+        if direct:
+            raise NotImplementedError("Direct pointers are not supported yet.")
+
+        offset = offset & ~(UNCOMPRESSED_BLOCK_FLAG | DIRECT_POINTER_FLAG)
+
+        self._fh.seek(offset)
+        data = self._fh.read(size)
+        if not data:
+            # sparse block aka hole
+            return b"\x00" * BLOCK_SIZE
+
+        if uncompressed:
+            return data
+
+        return zlib.decompress(data)

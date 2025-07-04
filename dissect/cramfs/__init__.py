@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from dissect.cramfs.cramfs import CramFS, FileStream, INode
 from dissect.cramfs.exceptions import (
     Error,
