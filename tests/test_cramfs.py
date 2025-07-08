@@ -56,11 +56,22 @@ def test_webcramfs(webcramfs: BinaryIO) -> None:
     file = cramfs.get("/bin/busybox")
     assert file.is_file()
     assert file.size == 330256
-    assert len(file.open().read()) == file.size
 
     symlink = cramfs.get("/bin/macGuarder")
     assert symlink.is_symlink()
     assert symlink.link == "./dvrbox"
+
+    fh = file.open()
+    assert len(fh.read()) == file.size
+    assert fh.tell() == file.size
+
+    fh.seek(4165)
+    assert fh.read(16) == b"\x00\x00\x00\xf0\x08\x00\x00\xb0\xb6\x00\x00\x00\x00\x00\x00\x12"
+    assert fh.tell() == 4165 + 16
+
+    fh.seek(0)
+    assert fh.read(4) == b"\x7fELF"
+    assert fh.tell() == 4
 
 
 def test_holecramfs(holecramfs: BinaryIO) -> None:
@@ -82,21 +93,21 @@ def test_holecramfs(holecramfs: BinaryIO) -> None:
     empty_file = cramfs.get("empty.txt")
     assert empty_file.is_file()
     assert empty_file.size == 0
-    assert empty_file.offset == 0
+    assert empty_file.data_offset == 0
     assert empty_file.open().read() == b""
 
     # test complete sparse file
     hole_file = cramfs.get("muchnull.txt")
     assert hole_file.is_file()
     assert hole_file.size == 69420
-    assert hole_file.offset == 292
+    assert hole_file.data_offset == 292
     assert hole_file.open().read() == b"\x00" * 69420
 
     # test partial sparse file
     hole_file = cramfs.get("somenull.txt")
     assert hole_file.is_file()
     assert hole_file.size == 3308
-    assert hole_file.offset == 360
+    assert hole_file.data_offset == 360
     assert hole_file.open().read() == b"\x00" * 1234 + b"\x69" * 420 + b"\x00" * 1234 + b"\x69" * 420
 
     # test device files
@@ -105,11 +116,11 @@ def test_holecramfs(holecramfs: BinaryIO) -> None:
     assert dev_file.size == 0
     assert dev_file.major == 13
     assert dev_file.minor == 37
-    assert dev_file.offset == 0
+    assert dev_file.data_offset == 0
 
     dev_file = cramfs.get("/dev/chary")
     assert dev_file.is_character_device()
     assert dev_file.size == 0
     assert dev_file.major == 69
     assert dev_file.minor == 69
-    assert dev_file.offset == 0
+    assert dev_file.data_offset == 0

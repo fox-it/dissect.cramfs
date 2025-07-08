@@ -1,14 +1,15 @@
+# References:
+# - https://github.com/digiampietro/lzma-uncramfs/blob/master/cramfs_fs.h
+# - https://github.com/npitre/cramfs-tools/blob/master/linux/cramfs_fs.h
+
 from __future__ import annotations
 
 from dissect.cstruct import cstruct
 
-# references
-# - https://github.com/digiampietro/lzma-uncramfs/blob/master/cramfs_fs.h
-# - https://github.com/npitre/cramfs-tools/blob/master/linux/cramfs_fs.h
-
 cramfs_def = """
 #define CRAMFS_MAGIC        0x28cd3d45	/* some random number */
-#define CRAMFS_SIGNATURE    "Compressed ROMFS"
+#define CRAMFS_SIGNATURE    b"Compressed ROMFS"
+#define CRAMFS_BLOCK_SIZE   4096
 
 /*
  * Width of various bitfields in struct cramfs_inode.
@@ -82,8 +83,10 @@ struct cramfs_super_block {
 #define CRAMFS_FLAG_BLKSZ_MASK          0x00003800  /* block size mask */
 #define CRAMFS_FLAG_COMP_METHOD_MASK    0x0000C000  /* Compression method mask */
 #define CRAMFS_FLAG_EXT_BLOCK_POINTERS  0x00000800  /* block pointer extensions */
-#define CRAMFS_FLAG_BLKSZ_SHIFT	        11
+#define CRAMFS_FLAG_DIRECT_POINTER      0x40000000  /* direct pointers flag */
+#define CRAMFS_FLAG_UNCOMPRESSED_BLOCK  0x80000000  /* uncompressed block flag */
 
+#define CRAMFS_FLAG_BLKSZ_SHIFT         11
 #define CRAMFS_FLAG_COMP_METHOD_SHIFT   14
 #define CRAMFS_FLAG_COMP_METHOD_NONE    0
 #define CRAMFS_FLAG_COMP_METHOD_GZIP    1
@@ -96,9 +99,5 @@ struct cramfs_super_block {
  */
 #define CRAMFS_SUPPORTED_FLAGS	( 0x000000ff | CRAMFS_FLAG_HOLES | CRAMFS_FLAG_WRONG_SIGNATURE | CRAMFS_FLAG_SHIFTED_ROOT_OFFSET | CRAMFS_FLAG_BLKSZ_MASK | CRAMFS_FLAG_COMP_METHOD_MASK)
 """  # noqa: E501
-
-UNCOMPRESSED_BLOCK_FLAG = 0x80000000
-DIRECT_POINTER_FLAG = 0x40000000
-BLOCK_SIZE = 4096
 
 c_cramfs = cstruct().load(cramfs_def)

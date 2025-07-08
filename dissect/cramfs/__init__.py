@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dissect.cramfs.cramfs import CramFS, FileStream, INode
-from dissect.cramfs.exceptions import (
+from dissect.cramfs.exception import (
     Error,
     FileNotFoundError,
     NotADirectoryError,

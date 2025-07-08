@@ -1,17 +1,17 @@
 import pytest
 
-from dissect.cramfs import exceptions
+from dissect.cramfs import exception
 
 
 @pytest.mark.parametrize(
     ("exc", "std"),
     [
-        (exceptions.FileNotFoundError, FileNotFoundError),
-        (exceptions.IsADirectoryError, IsADirectoryError),
-        (exceptions.NotADirectoryError, NotADirectoryError),
+        (exception.FileNotFoundError, FileNotFoundError),
+        (exception.IsADirectoryError, IsADirectoryError),
+        (exception.NotADirectoryError, NotADirectoryError),
     ],
 )
-def test_filesystem_error_subclass(exc: exceptions.Error, std: Exception) -> None:
+def test_filesystem_error_subclass(exc: exception.Error, std: Exception) -> None:
     assert issubclass(exc, std)
     assert isinstance(exc(), std)
 
