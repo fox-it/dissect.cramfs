@@ -67,6 +67,10 @@ class CramFS:
             offset: The offset of the block.
             size: The size of the block to read.
         """
+        if size == 0:
+            # Sparse block aka hole
+            return b"\x00" * c_cramfs.CRAMFS_BLOCK_SIZE
+
         uncompressed = offset & c_cramfs.CRAMFS_FLAG_UNCOMPRESSED_BLOCK
         direct = offset & c_cramfs.CRAMFS_FLAG_DIRECT_POINTER
 
@@ -74,10 +78,6 @@ class CramFS:
             raise NotImplementedError("Direct pointers are not supported yet")
 
         offset &= ~(c_cramfs.CRAMFS_FLAG_UNCOMPRESSED_BLOCK | c_cramfs.CRAMFS_FLAG_DIRECT_POINTER)
-
-        if size == 0:
-            # Sparse block aka hole
-            return b"\x00" * c_cramfs.CRAMFS_BLOCK_SIZE
 
         self.fh.seek(offset)
         return self.fh.read(size) if uncompressed else zlib.decompress(self.fh.read(size))
@@ -250,8 +250,7 @@ class BlockStream(AlignedStream):
 
         while length > 0 and block_idx < self.num_blocks:
             start, read_len = self.blocks[block_idx]
-            data = self.inode.fs._read_block(start, read_len)
-            result.append(data)
+            result.append(self.inode.fs._read_block(start, read_len))
 
             length -= c_cramfs.CRAMFS_BLOCK_SIZE
             block_idx += 1
