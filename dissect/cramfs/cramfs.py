@@ -40,18 +40,17 @@ class CramFS:
     def inode(self, offset: int) -> INode:
         return INode(self, offset)
 
-    def get(self, path: str | int, node: INode | None = None) -> INode:
-        """Return an inode object for the given path or inode number.
-
+    def get(self, path: str, node: INode | None = None) -> INode:
+        """Return an inode object for the given path.
         Args:
             path: The path of the inode.
             node: An optional inode object to relatively resolve the path from.
         """
-        if isinstance(path, int):
-            return self.inode(path)
-
         node = node or self.root
         for p in path.split("/"):
+            if not p:
+                continue
+
             for entry in node.iterdir():
                 if entry.name == p:
                     node = entry
@@ -76,12 +75,12 @@ class CramFS:
 
         offset &= ~(c_cramfs.CRAMFS_FLAG_UNCOMPRESSED_BLOCK | c_cramfs.CRAMFS_FLAG_DIRECT_POINTER)
 
-        self.fh.seek(offset)
-        if data := self.fh.read(size):
-            return data if uncompressed else zlib.decompress(data)
+        if size == 0:
+            # Sparse block aka hole
+            return b"\x00" * c_cramfs.CRAMFS_BLOCK_SIZE
 
-        # Sparse block aka hole
-        return b"\x00" * c_cramfs.CRAMFS_BLOCK_SIZE
+        self.fh.seek(offset)
+        return self.fh.read(size) if uncompressed else zlib.decompress(self.fh.read(size))
 
 
 class INode:
@@ -174,7 +173,7 @@ class INode:
 
         self.fs.fh.seek(self.data_offset)
         prev = self.data_offset + self.numblocks * 4
-        for offset in c_cramfs.uint32._read_array(self.fs.fh, self.numblocks):
+        for offset in c_cramfs.uint32[self.numblocks](self.fs.fh):
             result.append((prev, offset - prev))
             prev = offset
 
@@ -231,7 +230,7 @@ class INode:
         while (offset := self.fs.fh.tell()) != self.data_offset + self.size:
             yield self.fs.inode(offset)
 
-    def open(self) -> FileStream | RangeStream:
+    def open(self) -> BlockStream | RangeStream:
         """Return a file-like object for reading."""
         if self.is_dir():
             return RangeStream(self.fs.fh, self.data_offset, self.size)

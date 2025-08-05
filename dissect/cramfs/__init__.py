@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dissect.cramfs.cramfs import CramFS, FileStream, INode
+from dissect.cramfs.cramfs import BlockStream, CramFS, INode
 from dissect.cramfs.exception import (
     Error,
     FileNotFoundError,
@@ -10,10 +10,10 @@ from dissect.cramfs.exception import (
 )
 
 __all__ = [
+    "BlockStream",
     "CramFS",
     "Error",
     "FileNotFoundError",
-    "FileStream",
     "INode",
     "NotADirectoryError",
     "NotAFileError",
