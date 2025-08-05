@@ -35,25 +35,30 @@ class CramFS:
             raise ValueError("Invalid CramFS filesystem")
 
         self._read_block = lru_cache(1024)(self._read_block)
-        self.root = INode(self, (self.sb.root.offset << 2) - 12)
+        self.root = self.inode((self.sb.root.offset << 2) - 12)
 
-    def get(self, path: str, node: INode | None = None) -> INode:
+    def inode(self, offset: int) -> INode:
+        return INode(self, offset)
+
+    def get(self, path: str | int, node: INode | None = None) -> INode:
         """Return an inode object for the given path or inode number.
 
         Args:
             path: The path of the inode.
             node: An optional inode object to relatively resolve the path from.
         """
-        node = node or self.root
-        parts = path.split("/")
+        if isinstance(path, int):
+            return self.inode(path)
 
-        for part in filter(None, parts):
+        node = node or self.root
+        for p in path.split("/"):
             for entry in node.iterdir():
-                if entry.name == part:
+                if entry.name == p:
                     node = entry
                     break
             else:
                 raise FileNotFoundError(f"File not found: {path}")
+
         return node
 
     def _read_block(self, offset: int, size: int) -> bytes:
@@ -67,24 +72,20 @@ class CramFS:
         direct = offset & c_cramfs.CRAMFS_FLAG_DIRECT_POINTER
 
         if direct:
-            raise NotImplementedError("Direct pointers are not supported yet.")
+            raise NotImplementedError("Direct pointers are not supported yet")
 
-        offset = offset & ~(c_cramfs.CRAMFS_FLAG_UNCOMPRESSED_BLOCK | c_cramfs.CRAMFS_FLAG_DIRECT_POINTER)
+        offset &= ~(c_cramfs.CRAMFS_FLAG_UNCOMPRESSED_BLOCK | c_cramfs.CRAMFS_FLAG_DIRECT_POINTER)
 
         self.fh.seek(offset)
         if data := self.fh.read(size):
             return data if uncompressed else zlib.decompress(data)
 
-        # sparse block aka hole
+        # Sparse block aka hole
         return b"\x00" * c_cramfs.CRAMFS_BLOCK_SIZE
 
 
 class INode:
-    def __init__(
-        self,
-        fs: CramFS,
-        offset: int,
-    ):
+    def __init__(self, fs: CramFS, offset: int):
         self.fs = fs
         self.offset = offset
 
@@ -99,12 +100,12 @@ class INode:
 
     @property
     def mode(self) -> int:
-        """Return the inode mode."""
+        """Return the file mode."""
         return self.inode.mode
 
     @property
     def uid(self) -> int:
-        """Return the user ID of the inode."""
+        """Return the user ID."""
         return self.inode.uid
 
     @property
@@ -130,7 +131,7 @@ class INode:
 
     @property
     def gid(self) -> int:
-        """Return the group ID of the inode."""
+        """Return the group ID."""
         return self.inode.gid
 
     @property
@@ -167,17 +168,17 @@ class INode:
         return ((self.size + c_cramfs.CRAMFS_BLOCK_SIZE) - 1) // c_cramfs.CRAMFS_BLOCK_SIZE
 
     @cached_property
-    def block_list(self) -> list[tuple[int, int]]:
+    def blocks(self) -> list[tuple[int, int]]:
         """Return a list containing pairs of starting offsets and byte lengths for each block of this inode."""
-        self.fs.fh.seek(self.data_offset)
-        block_list = []
+        result = []
 
+        self.fs.fh.seek(self.data_offset)
         prev = self.data_offset + self.numblocks * 4
         for offset in c_cramfs.uint32._read_array(self.fs.fh, self.numblocks):
-            block_list.append((prev, offset - prev))
+            result.append((prev, offset - prev))
             prev = offset
 
-        return block_list
+        return result
 
     def is_dir(self) -> bool:
         """Return whether this inode is a directory."""
@@ -227,30 +228,29 @@ class INode:
             raise NotADirectoryError(f"{self!r} is not a directory")
 
         self.fs.fh.seek(self.data_offset)
-        end = self.data_offset + self.size
-        while (offset := self.fs.fh.tell()) != end:
-            yield INode(self.fs, offset)
+        while (offset := self.fs.fh.tell()) != self.data_offset + self.size:
+            yield self.fs.inode(offset)
 
     def open(self) -> FileStream | RangeStream:
         """Return a file-like object for reading."""
         if self.is_dir():
             return RangeStream(self.fs.fh, self.data_offset, self.size)
-        return FileStream(self)
+        return BlockStream(self)
 
 
-class FileStream(AlignedStream):
+class BlockStream(AlignedStream):
     def __init__(self, inode: INode):
         super().__init__(inode.size, c_cramfs.CRAMFS_BLOCK_SIZE)
         self.inode = inode
-        self.block_list = self.inode.block_list
-        self.block_len = len(self.block_list)
+        self.blocks = self.inode.blocks
+        self.num_blocks = len(self.blocks)
 
     def _read(self, offset: int, length: int) -> bytes:
         result = []
         block_idx = offset // c_cramfs.CRAMFS_BLOCK_SIZE
 
-        while length > 0 and block_idx < self.block_len:
-            start, read_len = self.block_list[block_idx]
+        while length > 0 and block_idx < self.num_blocks:
+            start, read_len = self.blocks[block_idx]
             data = self.inode.fs._read_block(start, read_len)
             result.append(data)
 

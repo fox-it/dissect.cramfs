@@ -7,26 +7,26 @@ from __future__ import annotations
 from dissect.cstruct import cstruct
 
 cramfs_def = """
-#define CRAMFS_MAGIC        0x28cd3d45	/* some random number */
-#define CRAMFS_SIGNATURE    b"Compressed ROMFS"
-#define CRAMFS_BLOCK_SIZE   4096
+#define CRAMFS_MAGIC                    0x28cd3d45	/* some random number */
+#define CRAMFS_SIGNATURE                b"Compressed ROMFS"
+#define CRAMFS_BLOCK_SIZE               4096
 
 /*
  * Width of various bitfields in struct cramfs_inode.
  * Primarily used to generate warnings in mkcramfs.
  */
-#define CRAMFS_MODE_WIDTH       16
-#define CRAMFS_UID_WIDTH        16
-#define CRAMFS_GID_WIDTH        8
-#define CRAMFS_NAMELEN_WIDTH    6
-#define CRAMFS_OFFSET_WIDTH     26
+#define CRAMFS_MODE_WIDTH               16
+#define CRAMFS_UID_WIDTH                16
+#define CRAMFS_GID_WIDTH                8
+#define CRAMFS_NAMELEN_WIDTH            6
+#define CRAMFS_OFFSET_WIDTH             26
 
 /*
  * Since inode.namelen is a unsigned 6-bit number, the maximum cramfs
  * path length is 63 << 2 = 252.
  */
-#define CRAMFS_MAXPATHLEN   (((1 << CRAMFS_NAMELEN_WIDTH) - 1) << 2)
-#define CRAMFS_SIZE_WIDTH   24
+#define CRAMFS_MAXPATHLEN               (((1 << CRAMFS_NAMELEN_WIDTH) - 1) << 2)
+#define CRAMFS_SIZE_WIDTH               24
 
 struct cramfs_inode {
     uint32 mode:16;
@@ -97,7 +97,7 @@ struct cramfs_super_block {
  * if (flags & ~CRAMFS_SUPPORTED_FLAGS).  Maybe that should be
  * changed to test super.future instead.
  */
-#define CRAMFS_SUPPORTED_FLAGS	( 0x000000ff | CRAMFS_FLAG_HOLES | CRAMFS_FLAG_WRONG_SIGNATURE | CRAMFS_FLAG_SHIFTED_ROOT_OFFSET | CRAMFS_FLAG_BLKSZ_MASK | CRAMFS_FLAG_COMP_METHOD_MASK)
+#define CRAMFS_SUPPORTED_FLAGS	        (0x000000ff | CRAMFS_FLAG_HOLES | CRAMFS_FLAG_WRONG_SIGNATURE | CRAMFS_FLAG_SHIFTED_ROOT_OFFSET | CRAMFS_FLAG_BLKSZ_MASK | CRAMFS_FLAG_COMP_METHOD_MASK)
 """  # noqa: E501
 
 c_cramfs = cstruct().load(cramfs_def)
