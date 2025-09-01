@@ -1,0 +1,99 @@
+[build-system]
+requires = ["setuptools>=65.5.0", "setuptools_scm[toml]>=6.4.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dissect.cramfs"
+description = "A Dissect module implementing a parser for the Cram file system, commonly used in appliance or device firmware"
+readme = "README.md"
+requires-python = "~=3.9"
+license.text = "Affero General Public License v3"
+authors = [
+  {name = "Dissect Team", email = "dissect@fox-it.com"}
+]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "Intended Audience :: Information Technology",
+  "License :: OSI Approved",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Internet :: Log Analysis",
+  "Topic :: Scientific/Engineering :: Information Analysis",
+  "Topic :: Security",
+  "Topic :: Utilities",
+]
+dependencies = [
+    "dissect.cstruct>=4,<5",
+    "dissect.util>=3,<4",
+]
+dynamic = ["version"]
+
+[project.urls]
+homepage = "https://dissect.tools"
+documentation = "https://docs.dissect.tools/en/latest/projects/dissect.cramfs"
+repository = "https://github.com/fox-it/dissect.cramfs"
+
+[project.optional-dependencies]
+dev = [
+    "dissect.cstruct>=4.0.dev,<5.0.dev",
+    "dissect.util>=3.0.dev,<4.0.dev",
+]
+
+[tool.ruff]
+line-length = 120
+required-version = ">=0.11.0"
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.ruff.lint]
+select = [
+  "F",
+  "E",
+  "W",
+  "I",
+  "UP",
+  "YTT",
+  "ANN",
+  "B",
+  "C4",
+  "DTZ",
+  "T10",
+  "FA",
+  "ISC",
+  "G",
+  "INP",
+  "PIE",
+  "PYI",
+  "PT",
+  "Q",
+  "RSE",
+  "RET",
+  "SLOT",
+  "SIM",
+  "TID",
+  "TCH",
+  "PTH",
+  "PLC",
+  "TRY",
+  "FLY",
+  "PERF",
+  "FURB",
+  "RUF",
+]
+ignore = ["E203", "B904", "UP024", "ANN002", "ANN003", "ANN204", "ANN401", "SIM105", "TRY003"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/_docs/**" = ["INP001"]
+"**/*.pyi" = ["PYI042", "PYI047"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dissect.cramfs"]
+known-third-party = ["dissect"]
+
+[tool.setuptools.packages.find]
+include = ["dissect.*"]
+
+[tool.setuptools_scm]
