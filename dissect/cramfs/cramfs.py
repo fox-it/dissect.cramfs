@@ -34,21 +34,26 @@ class CramFS:
         if self.sb.magic != c_cramfs.CRAMFS_MAGIC:
             raise ValueError("Invalid CramFS filesystem")
 
-        self._read_block = lru_cache(1024)(self._read_block)
         self.root = self.inode((self.sb.root.offset << 2) - 12)
+
+        self._read_block = lru_cache(1024)(self._read_block)
 
     def inode(self, offset: int) -> INode:
         return INode(self, offset)
 
-    def get(self, path: str, node: INode | None = None) -> INode:
-        """Return an inode object for the given path.
+    def get(self, path: str | int, node: INode | None = None) -> INode:
+        """Return an inode for the given path or offset.
+
         Args:
-            path: The path of the inode.
+            path: The path or offset of the inode.
             node: An optional inode object to relatively resolve the path from.
         """
+        if isinstance(path, int):
+            return self.inode(path)
+
         node = node or self.root
         for p in path.split("/"):
-            if not p:
+            if not p:  # Ignore empty path components due to leading or trailing or forward slashes
                 continue
 
             for entry in node.iterdir():
@@ -134,24 +139,18 @@ class INode:
         return self.inode.gid
 
     @property
-    def namelen(self) -> int:
-        """Return the length of the name in bytes."""
-        # namelen is stored divided by 4
-        return self.inode.namelen * 4
-
-    @property
     def data_offset(self) -> int:
         """Offset to the start of the data block or ``INode``.
 
-        * For files: this is the offset to the first data block.
-        * For directories: this is the offset to the first ``INode``.
-        * For symlinks: this is the offset the data block holding the target name.
+        - For files: this is the offset to the first data block.
+        - For directories: this is the offset to the first ``INode``.
+        - For symlinks: this is the offset the data block holding the target name.
         """
         return self.inode.offset << 2
 
     @property
     def name(self) -> str:
-        """Return the file name."""
+        """Return the name of this inode."""
         return self.inode.name.decode().strip("\x00")
 
     @cached_property
@@ -162,18 +161,14 @@ class INode:
         return self.open().read().decode().strip("\x00")
 
     @cached_property
-    def numblocks(self) -> int:
-        """Return the number of blocks in the file."""
-        return ((self.size + c_cramfs.CRAMFS_BLOCK_SIZE) - 1) // c_cramfs.CRAMFS_BLOCK_SIZE
-
-    @cached_property
     def blocks(self) -> list[tuple[int, int]]:
         """Return a list containing pairs of starting offsets and byte lengths for each block of this inode."""
         result = []
 
         self.fs.fh.seek(self.data_offset)
-        prev = self.data_offset + self.numblocks * 4
-        for offset in c_cramfs.uint32[self.numblocks](self.fs.fh):
+        num_blocks = ((self.size + c_cramfs.CRAMFS_BLOCK_SIZE) - 1) // c_cramfs.CRAMFS_BLOCK_SIZE
+        prev = self.data_offset + num_blocks * 4
+        for offset in c_cramfs.uint32[num_blocks](self.fs.fh):
             result.append((prev, offset - prev))
             prev = offset
 
